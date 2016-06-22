@@ -1,0 +1,223 @@
+---
+title: "Arsenic report"
+author: "Randy L Coryell"
+date: "June 17, 2016"
+output: pdf_document
+toc: true
+toc_depth: 4
+---
+
+
+## Overview of Analysis
+
+This report outlines a *regression* analysis of arsenic concentration as a function of well depth. it woll only include some basic assumption checks of normality and equal variance of the error terms.
+
+**Note**: Arsenic is measured in ppb; well depth is measured in feet.
+
+
+***
+
+As we proceed in our analysis we shall endeavor to remember the following:
+
+> The most that can be expected from any model is that it can supply a useful approximation to reality: All models are wrong; some models are useful.
+
+>> *George Box*
+
+
+
+***
+
+
+
+## Read the Data
+
+```{r read-data}
+file.name <- "arsenic-03.data"
+arsenic.data <- read.table(file=file.name, sep="\t", skip=5,
+                       header=TRUE, na.strings=c("."))
+dim(arsenic.data)
+head(arsenic.data, 4)
+```
+
+The data has `r nrow(arsenic.data) -
+sum(complete.cases(arsenic.data))` observations with 
+missing values out of a total of 
+`r nrow(arsenic.data)` observations.
+
+## Analysis
+
+### Visual Inspection of the Relationship
+
+We wish to examine the data visually.
+
+```{r fig.height=2.5, fig.width=4}
+plot(arsenic ~ depth, data=arsenic.data, cex=0.3, pch="+", col="red")
+```
+
+
+```{r fig.height=4}
+plot(arsenic ~ depth, data=arsenic.data, cex=.5, pch="o", col="red")
+```
+
+Perhaps a cubic relationship would fit the trend as it first curves upwards and then curves downwards.  It also appears that the variability increases in the middle.
+
+We will try a regression fit of arsenic using a cubic polynomial in *depth*. We first create quadratic and cubic *depth* variables.
+
+```{r}
+arsenic.data <- within(arsenic.data, {
+depth2 <- depth^2
+depth3 <- depth^3
+})
+head(arsenic.data, 3)
+reg01 <- lm(arsenic ~ depth + depth2 + depth3,
+            data=arsenic.data)
+summary(reg01)$coef
+```
+
+
+#### Table of Regression Coefficients
+
+| Variable | Coefficient | Significant|
+|:------------|------:|:-------:|
+| Intercept     | 24.985 | No|
+|Depth          | -6.217 | Yes|
+|Depth2         | 0.408  | Yes|
+|Depth3         | 0.005  | Yes|
+
+
+We add the fitted curve to the data plot to see how 
+well it appears to fit.
+
+```{r fig.height=4.5}
+plot(arsenic ~ depth, data=arsenic.data)
+x.range <- range(arsenic.data$depth)
+x <- seq(x.range[1], x.range[2], length.out=100)
+curve.data <- data.frame(depth=x, depth2=x^2, depth3=x^3)
+curve.data$arsenic <- predict(reg01, curve.data)
+lines(x=curve.data$depth, y=curve.data$arsenic,
+      col="blue", lwd=3)
+```
+
+The fit looks fairly decent.
+
+
+### Assumptions
+
+We now check assumptions about:
+
+- error variances
+    - should be equal
+- error distribution
+    - should be normal
+    
+We will do this with:
+
+1. plotting $e_i$ versus $\hat{y}_i$
+2. normal quantile plot
+
+
+#### Equal Variance of Errors
+
+We visually investigate the assumption of equal variances.
+
+
+```{r fig.height=4.5}
+resid <- residuals(reg01)
+y.hat <- predict(reg01, arsenic.data)
+plot(resid ~ y.hat)
+abline(h=0)
+```
+
+```{r fig.height=4.5}
+plot(resid ~ arsenic.data$depth)
+abline(h=0)
+```
+
+Clearly the assumption of equal variances of the error terms is not met.
+
+#### Normality of Errors
+
+We visually investigate the assumption of normality.
+
+```{r fig.height=4.5}
+qqnorm(resid)
+qqline(resid)
+```
+
+
+Clearly the normality assumption on the error terms is also not met.
+
+
+
+### Transformation of the Response
+
+To address the equal variance and normality of error term assumption violations, we attempt to find a transformation for the response variable using the BoxCox transformation method.
+
+```{r fig.height=4.5}
+library("MASS")
+boxcox(reg01)
+```
+
+From the plot we see that the BoxCox technique points to a log-transformation (since $\lambda = 0$).
+
+
+
+### Fit of Transformed Response
+
+We try fitting the data with the log-transformed response, and then perform assumption checks again.
+
+```{r fig.height=4.5}
+arsenic.data$log.arsenic <- log(arsenic.data$arsenic)
+reg02 <- lm(log.arsenic ~ depth + depth2 + depth3, data=arsenic.data)
+resid <- residuals(reg02)
+y.hat <- predict(reg02, arsenic.data)
+plot(resid ~ y.hat)
+abline(h=0)
+plot(resid ~ arsenic.data$depth)
+abline(h=0)
+```
+
+There does not appear to be any equal variance assumption violation with the log-transformed response.
+
+>
+
+We examine a plot of the log-transformed response versus depth.
+
+```{r fig.height=4.5}
+plot(log.arsenic ~ depth, data=arsenic.data)
+```
+
+The data appear much more consistent and looks as though a quadratic fit may be adequate.
+
+
+### Examination of the Fit with Transformed Response
+
+We examine the regression fit using the transformed response.
+
+```{r}
+summary(reg02)
+```
+
+>
+
+Indeed, the cubic term is not significant, so we refit the model without the cubic term.
+
+```{r}
+reg03 <- lm(log.arsenic ~ depth + depth2, data=arsenic.data)
+summary(reg03)
+```
+
+And the quadratic fit has all the terms highly significant (p-value < 0.0001).
+
+>
+
+We now plot the fit with the data.
+
+```{r fig.height=4.5}
+plot(log.arsenic ~ depth, data=arsenic.data)
+x <- seq(min(arsenic.data$depth), max(arsenic.data$depth),
+             length.out=100)
+curve.data$log.arsenic <-predict(reg03, curve.data)
+lines(x=curve.data$depth, y=curve.data$log.arsenic,
+      col="blue", lwd=3)
+```
